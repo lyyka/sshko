@@ -8,6 +8,14 @@ venv/
 .ruff_cache/
 .pytest_cache/
 
+# Build / packaging
+dist/
+build/
+*.egg-info/
+
+# uv
+.uv/
+
 # macOS
 .DS_Store
 

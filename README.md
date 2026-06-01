@@ -31,12 +31,38 @@ Global flags: `--config <path>` (default `~/.ssh/config`), `--no-color`.
 
 ## Install
 
-The script is a single, dependency-free Python 3 file. It's already symlinked to
-`~/.local/bin/sshko` (on your PATH). To reinstall elsewhere:
+sshko is a dependency-free Python 3 tool (standard library only). Pick whichever
+install style suits you.
+
+### With uv (recommended)
 
 ```sh
-ln -sf /Users/lukarobajac/Projects/sshko/sshko ~/.local/bin/sshko
+uv tool install .            # exposes `sshko` globally
+# or run without installing:
+uvx --from . sshko list
+# or inside the project:
+uv run sshko list
 ```
 
-Optional: install [`fzf`](https://github.com/junegunn/fzf) (`brew install fzf`)
-for fuzzy interactive picking; otherwise `pick` falls back to a numbered menu.
+### Zero-install (symlink the launcher)
+
+The repo ships a self-contained launcher that needs no install or `uv` — it just
+needs `python3`:
+
+```sh
+ln -sf "$PWD/sshko" ~/.local/bin/sshko   # anywhere on your PATH
+```
+
+### Optional
+
+Install [`fzf`](https://github.com/junegunn/fzf) (`brew install fzf`) for fuzzy
+interactive picking; otherwise `pick` falls back to a numbered menu.
+
+## Development
+
+```sh
+uv run pytest          # run the test suite
+uv sync                # set up the dev environment (installs pytest)
+```
+
+Without uv: `python -m venv .venv && .venv/bin/pip install pytest && .venv/bin/python -m pytest`.

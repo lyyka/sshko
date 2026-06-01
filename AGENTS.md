@@ -5,8 +5,10 @@ Guidance for AI agents (and humans) working on this repo.
 ## What this is
 
 `sshko` is a **read-only** CLI for inspecting an SSH config (`~/.ssh/config`).
-It is a single, dependency-free Python 3 file: [`sshko`](./sshko). There is no
-build step and no third-party runtime dependency — only the standard library.
+It is a dependency-free Python 3 package (standard library only). All program
+logic lives in one module, [`src/sshko/cli.py`](./src/sshko/cli.py); everything
+else is packaging, a launcher, and tests. There is no third-party runtime
+dependency.
 
 ## Hard invariants (do not break these)
 
@@ -26,18 +28,31 @@ build step and no third-party runtime dependency — only the standard library.
 
 ```
 sshko/
-├── sshko        # the entire program (executable, #!/usr/bin/env python3)
-├── README.md    # user-facing docs
-├── AGENTS.md    # this file
+├── src/sshko/
+│   ├── __init__.py    # exposes main(), __version__
+│   ├── __main__.py    # enables `python -m sshko`
+│   └── cli.py         # ALL program logic lives here
+├── tests/
+│   ├── conftest.py    # fixtures: plain_style, sample_config
+│   ├── test_parser.py # pure parser/model/resolution tests
+│   └── test_commands.py # output tests for ssh-free commands
+├── sshko              # zero-install launcher (executable) -> src/sshko/cli.py
+├── pyproject.toml     # packaging + entry point + pytest config (uv-friendly)
+├── README.md          # user-facing docs
+├── AGENTS.md          # this file
 └── .gitignore
 ```
 
-Installed by symlinking the script onto PATH:
-`ln -sf "$PWD/sshko" ~/.local/bin/sshko`.
+Three ways to run it, all calling the same `sshko.cli:main`:
+- **uv:** `uv tool install .`, `uvx --from . sshko`, or `uv run sshko`.
+- **Zero-install launcher:** the top-level `sshko` script adds `src/` to
+  `sys.path` then calls `main()` — works via a PATH symlink without any install
+  (`ln -sf "$PWD/sshko" ~/.local/bin/sshko`). Used because `uv` may be absent.
+- **Module:** `python -m sshko`.
 
-## Architecture of `sshko`
+## Architecture of `src/sshko/cli.py`
 
-The script is organized top-to-bottom into clear sections:
+The module is organized top-to-bottom into clear sections:
 
 - **`Style` / `make_style`** — TTY-aware ANSI coloring. Auto-disabled when stdout
   is not a TTY, when `--no-color` is passed, or when `NO_COLOR` is set.
@@ -68,6 +83,8 @@ The script is organized top-to-bottom into clear sections:
     takes the first value seen for each key (ssh-accurate), returning hostname /
     user / port / identityfile.
   - `collect_hosts(blocks)` — ordered, de-duplicated `(alias, defining_block)`.
+  - `_format_target(summary)` — renders a summary as `user@hostname:port`,
+    omitting an absent user and the default port 22.
 
 - **Commands** — `cmd_list`, `cmd_search`, `cmd_show`, `cmd_connect`, `cmd_pick`.
   - `cmd_show` is the one place that trusts `ssh -G` for the **authoritative**
@@ -91,38 +108,27 @@ The script is organized top-to-bottom into clear sections:
 
 ## Testing
 
-There is no test suite yet. The reliable way to test is against a throwaway
-config dir, exercising includes, wildcards, and negation. Example:
+Tests live in `tests/` and use `pytest`. They cover the pure, ssh-free core
+(parsing, includes, wildcard/negation matching, first-value-wins resolution,
+de-duplication, target formatting) plus the output of the ssh-free commands
+(`list`, `search`) via `capsys`. They deliberately do **not** test `cmd_show`
+(needs a real `ssh -G`) or `cmd_connect` (`os.execv`).
+
+Run them:
 
 ```sh
-TMP=$(mktemp -d); mkdir -p "$TMP/conf.d"
-cat > "$TMP/config" <<'EOF'
-Host *
-    ForwardAgent yes
-Host web-prod
-    HostName 10.0.0.5
-    User deploy
-    Port 2222
-Host web-* !web-old
-    User www-data
-Include conf.d/*.conf
-EOF
-cat > "$TMP/conf.d/extra.conf" <<'EOF'
-Host db1 db-primary
-    HostName db1.internal
-    User postgres
-EOF
-
-./sshko --no-color --config "$TMP/config" list
-./sshko --no-color --config "$TMP/config" search db
-./sshko --no-color --config "$TMP/config" show web-prod
-rm -rf "$TMP"
+uv run pytest
+# or, without uv:
+python -m venv .venv && .venv/bin/pip install pytest && .venv/bin/python -m pytest
 ```
 
-Expected: `list` shows `web-prod`, `db1`, `db-primary` (not `web-*` or `*`);
-`web-prod` resolves to `deploy@10.0.0.5:2222` (its own block wins over the
-`web-*` default). If you add tests, `pytest` is a sensible choice — add it as a
-dev-only dependency, never a runtime one.
+`pythonpath = ["src"]` in `pyproject.toml` makes `import sshko` work in tests
+without an install step. Key fixtures (`tests/conftest.py`): `plain_style`
+(coloring off, so assertions match raw text) and `sample_config` (a tmp config
+exercising includes/wildcards/negation).
+
+When adding behavior, add a test in the matching file. Keep `pytest` a
+**dev-only** dependency (`[dependency-groups].dev`) — never a runtime one.
 
 ## When extending
 
